@@ -3,11 +3,44 @@ const app = express();
 const cors = require('cors');
 require('dotenv').config()
 const port = process.env.PORT || 5000;
+const jwt = require('jsonwebtoken');
 
 // middleware
 app.use(cors());
 app.use(express.json());
 
+const verifyJwt =(req,res, next)=>{
+  const authorization = req.headers.authorization;
+  if(!authorization){
+    return res.status(401).send({error: true, message: 'unauthorized access'});
+  }
+
+
+
+  //bearer token
+  const token = authorization.split(' ')[1];
+
+  jwt.verify(token, process.env.Access_Token,(err,decoded)=>{
+    if(err){
+      return res.status(401).send({error: true, message: 'unauthorized access'})
+    }
+    req.decoded = decoded;
+    next();
+  })
+}
+
+
+//admin verify 
+const verifyAdmin = async(req,res,next)=>{
+  const email = req.decoded.email;
+  const query = {email: email}
+  const user = await usersCollection.findOne(query);
+  if(user?.role !== 'admin'){
+    return res.status(403).send({ error:true, message:'forbiden message'})
+  }
+
+  next();
+}
 
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const uri = `mongodb+srv://${process.env.DB_User}:${process.env.DB_Pass}@cluster0.gq6gqcm.mongodb.net/?retryWrites=true&w=majority`;
@@ -31,8 +64,14 @@ async function run() {
     const reviewsCollection = client.db("RestroDB").collection("Reviews");
     const cartCollection = client.db("RestroDB").collection("carts");
 
+    app.post('/jwt', (req,res)=>{
+      const user = req.body;
+      const token = jwt.sign(user, process.env.Access_Token,{ expiresIn: 60 * 60 })
+      res.send({token})
+    })
+
     // users related api 
-    app.get('/users',async(req,res)=>{
+    app.get('/users', verifyJwt,verifyAdmin, async(req,res)=>{
       const result = await usersCollection.find().toArray();
       return res.send(result);
   })
@@ -51,6 +90,33 @@ async function run() {
       return res.send(result)
     })
 
+    //check email
+    // security layer: jwt
+    //chek admin
+
+    app.get('/users/admin/:email', verifyJwt, async(req,res)=>{
+      const email = req.params.email;
+
+      if(req.decoded.email !==email){
+        return res.send({admin:false})
+      }
+      const query = {email: email}
+      const user = await usersCollection.findOne(query);
+      const result = { admin: user?.role=== 'admin'}
+       res.send(result);
+    })
+
+    app.patch('/users/admin/:id', async(req,res)=>{
+      const id = req.params.id;
+      const filter = { _id: new ObjectId(id)};
+      const updateDoc ={
+        $set:{
+          role:'admin'
+        },
+      };
+      const result = await usersCollection.updateOne(filter,updateDoc);
+      return res.send(result)
+    })
 
   //  menuRelated Api 
 
@@ -66,12 +132,19 @@ async function run() {
     })
 
     // cart colllection 
-    app.get('/carts',async(req,res)=>{
+    app.get('/carts',verifyJwt, async(req,res)=>{
       const email = req.query.email;
+
       console.log(email);
       if(!email){
         return res.send([]);
       }
+
+         const decodedEmail = req.decoded.email;
+         if(email!==decodedEmail){
+          return res.status(403).send({error: true, message: 'forbidden access'})
+         }
+
       const query = {email:email};
       const result = await cartCollection.find(query).toArray();
       return res.send(result)
