@@ -30,17 +30,7 @@ const verifyJwt =(req,res, next)=>{
 }
 
 
-//admin verify 
-const verifyAdmin = async(req,res,next)=>{
-  const email = req.decoded.email;
-  const query = {email: email}
-  const user = await usersCollection.findOne(query);
-  if(user?.role !== 'admin'){
-    return res.status(403).send({ error:true, message:'forbiden message'})
-  }
 
-  next();
-}
 
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const uri = `mongodb+srv://${process.env.DB_User}:${process.env.DB_Pass}@cluster0.gq6gqcm.mongodb.net/?retryWrites=true&w=majority`;
@@ -70,6 +60,18 @@ async function run() {
       res.send({token})
     })
 
+    //admin verify 
+const verifyAdmin = async(req,res,next)=>{
+  const email = req.decoded.email;
+  const query = {email: email}
+  const user = await usersCollection.findOne(query);
+  if(user?.role !== 'admin'){
+    return res.status(403).send({ error:true, message:'forbidden message'})
+  }
+
+  next();
+}
+
     // users related api 
     app.get('/users', verifyJwt,verifyAdmin, async(req,res)=>{
       const result = await usersCollection.find().toArray();
@@ -97,13 +99,14 @@ async function run() {
     app.get('/users/admin/:email', verifyJwt, async(req,res)=>{
       const email = req.params.email;
 
-      if(req.decoded.email !==email){
-        return res.send({admin:false})
+      if (req.decoded.email !== email) {
+        res.send({ admin: false })
       }
-      const query = {email: email}
+
+      const query = { email: email }
       const user = await usersCollection.findOne(query);
-      const result = { admin: user?.role=== 'admin'}
-       res.send(result);
+      const result = { admin: user?.role === 'admin' }
+      res.send(result);
     })
 
     app.patch('/users/admin/:id', async(req,res)=>{
@@ -117,6 +120,14 @@ async function run() {
       const result = await usersCollection.updateOne(filter,updateDoc);
       return res.send(result)
     })
+
+    app.delete('/users/:id',async(req,res)=>{
+      const id= req.params.id;
+      const query={ _id: new ObjectId(id)}; 
+      const result = await usersCollection.deleteOne(query);
+      return res.send(result);
+ })
+ // S
 
   //  menuRelated Api 
 
