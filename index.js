@@ -4,6 +4,7 @@ const cors = require('cors');
 require('dotenv').config()
 const port = process.env.PORT || 5000;
 const jwt = require('jsonwebtoken');
+const stripe = require("stripe")(process.env.Payment_Secret_key);
 
 // middleware
 app.use(cors());
@@ -53,10 +54,11 @@ async function run() {
     const menuCollection = client.db("RestroDB").collection("Menu");
     const reviewsCollection = client.db("RestroDB").collection("Reviews");
     const cartCollection = client.db("RestroDB").collection("carts");
+    const paymentCollection = client.db("RestroDB").collection("payment");
 
     app.post('/jwt', (req,res)=>{
       const user = req.body;
-      const token = jwt.sign(user, process.env.Access_Token,{ expiresIn: 60 * 60 })
+      const token = jwt.sign(user, process.env.Access_Token,{ expiresIn: '1h' })
       res.send({token})
     })
 
@@ -135,6 +137,19 @@ const verifyAdmin = async(req,res,next)=>{
         const result = await menuCollection.find().toArray();
         return res.send(result);
     })
+
+    app.post ('/menu' ,verifyJwt,verifyAdmin, async(req,res)=>{
+      const newItem = req.body;
+      const result = await menuCollection.insertOne(newItem);
+      res.send(result)
+    })
+
+    app.delete('/menu/:id',  async(req,res)=>{
+      const id= req.params.id;
+      const query= {$or:[{_id:new ObjectId(id)},{_id:id}]}; 
+      const result = await menuCollection.deleteOne(query);
+      return res.send(result);
+ })
     
     // review Related api 
     app.get('/reviews',async(req,res)=>{
@@ -174,6 +189,35 @@ const verifyAdmin = async(req,res,next)=>{
          const result = await cartCollection.deleteOne(query);
          return res.send(result);
     })
+
+    app.post("/create-payment-intent", async (req, res) => {
+      const { price } = req.body;
+    
+      // Create a PaymentIntent with the order amount and currency
+      const amount= price*100;
+          
+           
+          
+    // Create a PaymentIntent with the order amount and currency
+  const paymentIntent = await stripe.paymentIntents.create({
+    amount: amount,
+    currency: "usd",
+    payment_method_types:['card']
+  });
+ res.send({
+  clientSecret: paymentIntent.client_secret
+ })
+  })
+
+  //payment relatedApi
+  app.post('/payments', async(req,res)=>{
+    const payment = req.body;
+    const inresult = await paymentCollection.insertOne(payment);
+
+    const query = {_id:{$in: payment.cartItems.map(id=> new ObjectId (id))}}
+    const deleteResult = await cartCollection.deleteMany(query)
+    res.send(inresult,deleteResult);
+  })
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
